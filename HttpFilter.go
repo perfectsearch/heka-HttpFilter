@@ -89,28 +89,18 @@ func (hf *HttpFilter) Run(fr FilterRunner, h PluginHelper) (err error) {
 
 	for pack := range inChan {
 		values["Payload"] = pack.Message.GetPayload()
+		new_pack, _ := h.PipelinePack(pack.MsgLoopCount)
 		
-		for _, field := range pack.Message.Fields {
-			// It's painful to be converting these numeric values to strings,
-			// but for now it's the only way to get numeric data into the stat
-			// accumulator.
-			if field.GetValueType() == message.Field_STRING && len(field.ValueString) > 0 {
-				val = field.ValueString[0]
-			} else if field.GetValueType() == message.Field_DOUBLE {
-				val = strconv.FormatFloat(field.ValueDouble[0], 'f', -1, 64)
-			} else if field.GetValueType() == message.Field_INTEGER {
-				val = strconv.FormatInt(field.ValueInteger[0], 10)
-			}
-			values[field.GetName()] = val
-		}
-		
+		// send message to searchserver and change status of new_pack accordingly
 		if success = hf.request(fr, hf.Match, []byte(values["Payload"])); success {
-			// change message to success
-			pack.Message.SetType("http.success")
+			new_pack.Message.SetType("http.success")
 		} else{
-			// change message to failure
-			pack.Message.SetType("http.failure")
+			new_pack.Message.SetType("http.failure")
 		}
+		
+		fr.Inject(new_pack) //Add the new_pack
+		fr.UpdateCursor(pack.QueueCursor)
+		pack.Recycle(nil) //Remove the old pack
 	}
 
 	return
